@@ -2,7 +2,7 @@
 
 | Field   | Value                                    |
 | ------- | ---------------------------------------- |
-| Status  | In progress — Phase 0 done, Phase 1 next |
+| Status  | In progress — Phases 0–1 done, Phase 2 next |
 | Created | 2026-11-19                               |
 | Product | **GlobalConvert**                        |
 | Targets | Windows, macOS, Linux                    |
@@ -81,30 +81,36 @@ and offer it as a better docx→pdf engine. Never required; never bundled in Pla
 
 ### 3.1 Converter contract (the extension point)
 
-```ts
-// src/shared/converter.ts
-export type FormatId = 'png' | 'jpg' | 'webp' | 'avif' | 'gif' | 'tiff' | 'ico' | 'svg'
-  | 'pdf' | 'docx' | 'txt' | 'html' | 'md';   // future plans extend this union
+As implemented in Phase 1 (`src/shared/converter.ts`, `src/shared/formats.ts`):
 
-export interface Converter<O = unknown> {
+```ts
+// FORMAT_IDS in formats.ts — future plans extend this list
+export type FormatId = 'png' | 'jpg' | 'webp' | 'avif' | 'gif' | 'tiff' | 'ico' | 'svg'
+  | 'pdf' | 'docx' | 'txt' | 'html' | 'md';
+
+export interface Converter<O extends OptionValues = OptionValues> extends ConverterInfo {
   id: string;                         // 'image.sharp-raster'
   family: 'image' | 'document';       // future: 'audio' | 'video' | ...
-  from: FormatId[];
-  to: FormatId[];
-  optionsSchema: OptionField[];       // drives the Options panel UI automatically
+  from: readonly FormatId[];
+  to: readonly FormatId[];
+  optionsSchema: readonly OptionField[]; // number | select | boolean — drives the Options UI
   defaults: O;
-  convert(job: ConvertJob<O>, ctx: ConvertContext): Promise<ConvertResult>;
+  notes?: string;                     // shown when output is lossy/approximate
+  convert(job: ConvertJob<O>, ctx: ConvertContext): Promise<void>;
 }
 
 export interface ConvertContext {
   signal: AbortSignal;                       // cancel
   progress(ratio: number): void;             // 0..1
-  tmpDir: string;
-  renderHtmlToPdf(html: string, opts?: PdfOpts): Promise<Buffer>;
+  tmpDir: string;                            // per job, auto-deleted
+  reserveOutput(suffix?: string): Promise<string>; // unique output path, never overwrites
 }
-
-export interface ConvertResult { outputs: string[] }   // multi-page → many files
 ```
+
+- Outputs = every path the converter got from `reserveOutput` (multi-page → one call per
+  page with a suffix like `-p1`). On failure/cancel the engine deletes them.
+- Options are validated against `optionsSchema` (`resolveOptions`) before `convert` runs.
+- `ctx.renderHtmlToPdf()` is **deferred to Phase 3**, where the first converter needs it.
 
 - `ConverterRegistry.targetsFor(format)` → list of reachable formats (UI uses this).
 - `ConverterRegistry.pick(from, to)` → best converter (first registered wins; an
@@ -191,13 +197,19 @@ Each phase ends in a working, testable state.
 3. `npm run dev`, `npm test`, `npm run typecheck`, `npm run lint` all work.
 - **verify:** app window opens; empty test suite passes; typecheck clean.
 
-### Phase 1 — Core engine
+### Phase 1 — Core engine ✅ Done 2026-11-19
 1. `shared/converter.ts`, `shared/formats.ts` (id, label, extensions, mime, family).
 2. Engine utilityProcess + message protocol; `ConverterRegistry`.
 3. `JobQueue` in main with concurrency, cancel (AbortSignal), per-job progress.
 4. Format detection by **magic bytes** first, extension as fallback.
 - **verify:** unit tests for registry (`targetsFor`, `pick`), queue (concurrency, cancel),
   detection (each fixture detected correctly, renamed file detected by content).
+- **result:** 65 tests pass (detect, registry, options, queue, engine host, IPC validation).
+  Also added: main IPC (`engine:converters`, `files:detect`, `convert:start/cancel`,
+  `convert:event`) with payload validation; fixtures via `npm run fixtures`.
+  Checked in the running app: engine process starts and reports in; detection and
+  validation work over IPC. A full engine conversion round-trip in the real app is
+  first exercised in Phase 2 (no converters registered yet).
 
 ### Phase 2 — Image converters
 1. `sharp-raster` (png/jpg/webp/avif/gif/tiff, svg input, animation handling).

@@ -1,7 +1,10 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import { IPC } from '@shared/ipc';
+import { app, BrowserWindow, shell } from 'electron';
 import icon from '../../resources/icon.png?asset';
+import { EngineClient } from './engine-client';
+import { registerIpc } from './ipc/register';
+
+const engine = new EngineClient(join(__dirname, 'engine.js'));
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -44,9 +47,15 @@ app.whenReady().then(() => {
   // macOS dev: show the logo in the Dock (packaged builds use the .icns from build/icon.png).
   if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(icon);
 
-  ipcMain.handle(IPC.appVersion, () => app.getVersion());
+  const queue = registerIpc(engine);
+  app.on('before-quit', () => {
+    queue.cancelAll();
+    engine.stop();
+  });
 
   createMainWindow();
+  // Start the engine early so the first conversion doesn't wait for it.
+  engine.converters().catch((err: unknown) => console.error('[engine]', err));
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });

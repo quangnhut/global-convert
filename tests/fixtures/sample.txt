@@ -1,0 +1,2 @@
+GlobalConvert fixture
+Second line — with UTF-8: café, 日本語.
