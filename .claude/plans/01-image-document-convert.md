@@ -2,7 +2,7 @@
 
 | Field   | Value                                    |
 | ------- | ---------------------------------------- |
-| Status  | In progress — Phases 0–1 done, Phase 2 next |
+| Status  | In progress — Phases 0–2 done, Phase 3 next |
 | Created | 2026-11-19                               |
 | Product | **GlobalConvert**                        |
 | Targets | Windows, macOS, Linux                    |
@@ -40,7 +40,7 @@ adding a converter module and registering it.
 | Language           | **TypeScript** (strict)              | |
 | UI                 | **React** + plain CSS modules        | Keep it simple; no UI framework until needed |
 | Raster images      | **sharp** (libvips)                  | Fast, covers png/jpg/webp/avif/gif/tiff, reads SVG |
-| ICO                | **png-to-ico** (write), **decode-ico** (read) | sharp has no ICO support |
+| ICO                | built-in writer (PNG entries), **decode-ico** (read, MIT) | sharp has no ICO support; writing PNG-entry ICOs is ~30 lines, no dep needed |
 | DOCX read          | **mammoth**                          | docx → html / raw text |
 | DOCX write         | **docx**                             | Generate .docx from text |
 | PDF read           | **pdfjs-dist**                       | Text extraction + page rendering |
@@ -115,6 +115,7 @@ export interface ConvertContext {
 - `ConverterRegistry.targetsFor(format)` → list of reachable formats (UI uses this).
 - `ConverterRegistry.pick(from, to)` → best converter (first registered wins; an
   explicit `priority` field can be added when two engines compete, e.g. LibreOffice).
+- **Same-format pairs are never offered** (`from === to`), matching the matrix diagonal.
 - **No automatic chaining** in Plan 01. If a pair isn't directly supported, it isn't
   offered. Chaining (graph path-finding) is a candidate for a later plan.
 
@@ -126,7 +127,8 @@ src/
   main/            index.ts, ipc/, queue/, windows/, services/pdf-render.ts
   engine/          index.ts (utilityProcess entry), registry.ts
     converters/
-      image/       sharp-raster.ts, ico.ts, svg-wrap.ts, images-to-pdf.ts
+      image/       sharp-common.ts, sharp-raster.ts, ico-encode.ts, ico-decode.ts,
+                   svg-wrap.ts, images-to-pdf.ts
       document/    docx.ts, pdf.ts, txt.ts, md.ts
   preload/         index.ts (contextBridge, typed API)
   renderer/        App.tsx, components/, hooks/, styles/
@@ -150,8 +152,8 @@ tests/
 
 ¹ raster → svg = PNG **embedded** in an `<svg>` wrapper (not vectorization). Label it
 honestly in the UI. True tracing (potrace) is out of scope.
-² animated gif → webp/avif keeps animation; → png/jpg/tiff takes the first frame
-(option: export all frames).
+² animated gif → webp keeps animation; → png/jpg/tiff/avif takes the first frame
+(option: export all frames). sharp cannot write animated AVIF.
 
 Image options: quality (1–100), resize (width/height/fit), strip metadata,
 background colour (for transparency → jpg), ICO sizes (16/24/32/48/64/128/256),
@@ -165,7 +167,7 @@ SVG render density (DPI).
 | pdf       | — | ✔³ | ✔ | — | ✔ |
 | txt       | ✔ | ✔ | — | ✔ | — |
 | md        | ✔ | ✔ | ✔ | ✔ | — |
-| images    | ✔ (one page per image, merge option) | — | — | — | — |
+| images    | ✔ (one page per image; merge deferred⁴) | — | — | — | — |
 
 ³ pdf → docx (built in, no external tools) offers two modes, picked in Options:
 - **Editable** (default): pdfjs text items with positions/fonts → group into lines and
@@ -176,6 +178,9 @@ SVG render density (DPI).
   Looks identical, but the text is not editable.
 - If LibreOffice is detected, offer it as a third engine (`--infilter=writer_pdf_import`).
 Scanned PDFs (no text layer) fall back to Exact layout; OCR is out of scope.
+
+⁴ Merging several images into one PDF needs a multi-input job; the job contract has one
+input file. Deferred to Phase 4 (queue/UI), where batches exist.
 
 Document options: page size (A4/Letter), margins, font (txt/md → pdf/docx),
 text encoding (txt input: auto-detect UTF-8/UTF-16/Windows-1252),
@@ -217,6 +222,14 @@ Each phase ends in a working, testable state.
 3. `svg-wrap`, `images-to-pdf` (pdf-lib).
 - **verify:** one test per matrix cell: output exists, magic bytes match target,
   dimensions as expected. Animated gif → webp keeps frame count.
+- **result:** ✅ Done 2026-11-20. 142 tests pass (77 new in `tests/converters/`, run through
+  the real engine host + registry: all 61 image matrix cells plus options, animation,
+  ICO sizes/BMP entries, corrupt input). Checked in a real Electron `utilityProcess`
+  (built `out/main/engine.js`): gif→webp, png→ico, ico→png, svg→pdf, jpg→svg all succeed.
+  Changes from the plan: ICO writer is built in (no png-to-ico); animated AVIF not
+  possible with sharp (first frame); same-format pairs never offered; image merge → PDF
+  deferred (⁴). Image options: quality, width/height/fit, background (jpg), strip
+  metadata, frames (first/all), SVG density; ICO sizes; PDF page size (image/A4/Letter).
 
 ### Phase 3 — Document converters
 1. `txt` (encoding detection; → pdf/docx/html).
@@ -262,6 +275,7 @@ Each phase ends in a working, testable state.
 | docx→pdf fidelity complaints | Clear UI note + optional LibreOffice engine |
 | Large PDFs (500+ pages) → memory | Render page-by-page, stream to disk, respect page range |
 | Malicious files (zip bombs in docx, huge SVG) | Size limits, pixel limit (`sharp({ limitInputPixels })`), timeouts per job, engine process isolation |
+| sharp under Electron on Linux prints many `GLib-GObject-CRITICAL` warnings (sharp warns `SharpElectronLinux`); output is still correct in testing | Phase 5: verify on clean Linux installs (AppImage + deb); follow sharp's "Electron and Linux" install notes if it misbehaves |
 | AGPL licences (e.g. mupdf, ghostscript) | Don't add AGPL deps without explicit decision |
 
 ---

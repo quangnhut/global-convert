@@ -18,9 +18,16 @@ describe('ConverterRegistry', () => {
     const r = new ConverterRegistry()
       .register(fake('a', ['png', 'jpg'], ['webp', 'png']))
       .register(fake('b', ['png'], ['pdf', 'webp']));
-    expect(r.targetsFor('png')).toEqual(['png', 'webp', 'pdf']);
+    expect(r.targetsFor('png')).toEqual(['webp', 'pdf']);
     expect(r.targetsFor('jpg')).toEqual(['png', 'webp']);
     expect(r.targetsFor('docx')).toEqual([]);
+  });
+
+  it('never offers or picks a same-format conversion', () => {
+    const r = new ConverterRegistry().register(fake('a', ['png', 'gif'], ['png', 'gif']));
+    expect(r.targetsFor('gif')).toEqual(['png']);
+    expect(r.pick('gif', 'gif')).toBeUndefined();
+    expect(r.pick('gif', 'png')?.id).toBe('a');
   });
 
   it('pick returns the first registered converter for a pair', () => {

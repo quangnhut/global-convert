@@ -1,11 +1,16 @@
 import { pickConverter, targetsFor } from '@shared/capabilities';
-import type { Converter, ConverterInfo } from '@shared/converter';
+import type { Converter, ConverterInfo, OptionValues } from '@shared/converter';
 import { isFormatId, type FormatId } from '@shared/formats';
+import { icoDecode } from './converters/image/ico-decode';
+import { icoEncode } from './converters/image/ico-encode';
+import { imagesToPdf } from './converters/image/images-to-pdf';
+import { sharpRaster } from './converters/image/sharp-raster';
+import { svgWrap } from './converters/image/svg-wrap';
 
 export class ConverterRegistry {
   private readonly converters: Converter[] = [];
 
-  register(converter: Converter): this {
+  register<O extends OptionValues>(converter: Converter<O>): this {
     if (this.converters.some((c) => c.id === converter.id)) {
       throw new Error(`Converter "${converter.id}" is already registered`);
     }
@@ -16,7 +21,8 @@ export class ConverterRegistry {
     if (unknown.length > 0) {
       throw new Error(`Converter "${converter.id}" uses unknown formats: ${unknown.join(', ')}`);
     }
-    this.converters.push(converter);
+    // Safe: the host always passes options resolved against this converter's own schema.
+    this.converters.push(converter as unknown as Converter);
     return this;
   }
 
@@ -42,7 +48,12 @@ export class ConverterRegistry {
   }
 }
 
-/** The app's converters. Phase 2/3 register image and document converters here. */
+/** The app's converters. Phase 3 registers document converters here. */
 export function createRegistry(): ConverterRegistry {
-  return new ConverterRegistry();
+  return new ConverterRegistry()
+    .register(sharpRaster)
+    .register(icoEncode)
+    .register(icoDecode)
+    .register(svgWrap)
+    .register(imagesToPdf);
 }
