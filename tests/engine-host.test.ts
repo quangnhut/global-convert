@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConvertError, type Converter, type ConvertJob } from '@shared/converter';
-import type { EngineToMain } from '@shared/engine-protocol';
+import type { EngineToMain, MainToEngine } from '@shared/engine-protocol';
 import { createEngineHost } from '../src/engine/host';
 import { ConverterRegistry } from '../src/engine/registry';
 
@@ -151,6 +151,92 @@ describe('engine host', () => {
     await running;
     expect(sent.at(-1)).toEqual({ type: 'cancelled', jobId: 'job1' });
     expect(readdirSync(dir)).toEqual(['photo.txt']);
+    expect(readdirSync(tmpRoot)).toEqual([]);
+  });
+});
+
+describe('engine host — renderHtmlToPdf', () => {
+  /** Prints "<html>" via main, writes the PDF bytes it gets back. */
+  const printer: Converter = {
+    id: 'test.print',
+    family: 'document',
+    from: ['txt'],
+    to: ['pdf'],
+    optionsSchema: [],
+    defaults: {},
+    async convert(_job, ctx) {
+      const pdf = await ctx.renderHtmlToPdf('<p>hi</p>', { pageSize: 'A4', marginMm: 10 });
+      writeFileSync(await ctx.reserveOutput(), pdf);
+    },
+  };
+
+  /** `answer` decides how "main" replies to each render-pdf request (or not at all). */
+  function setupPrint(answer: (requestId: string) => MainToEngine | undefined) {
+    const sent: EngineToMain[] = [];
+    const host = createEngineHost(
+      new ConverterRegistry().register(printer),
+      (m) => {
+        sent.push(m);
+        if (m.type === 'render-pdf') {
+          expect(readFileSync(m.htmlPath, 'utf8')).toBe('<p>hi</p>');
+          expect(m.htmlPath.startsWith(tmpRoot)).toBe(true);
+          const reply = answer(m.requestId);
+          if (reply) setTimeout(() => void host.handle(reply), 5);
+        }
+      },
+      { tmpRoot },
+    );
+    const job: ConvertJob = {
+      id: 'p1',
+      inputPath: input,
+      from: 'txt',
+      to: 'pdf',
+      outputDir: dir,
+      options: {},
+    };
+    return { host, sent, job };
+  }
+
+  it('sends the HTML file to main and writes the PDF it returns', async () => {
+    const { host, sent, job } = setupPrint((requestId) => ({
+      type: 'render-pdf-result',
+      requestId,
+      pdf: new TextEncoder().encode('%PDF-fake'),
+    }));
+    await host.handle({ type: 'convert', job });
+    expect(sent.find((m) => m.type === 'render-pdf')).toMatchObject({
+      options: { pageSize: 'A4', marginMm: 10 },
+    });
+    expect(sent.at(-1)).toEqual({ type: 'done', jobId: 'p1', outputs: [join(dir, 'photo.pdf')] });
+    expect(readFileSync(join(dir, 'photo.pdf'), 'utf8')).toBe('%PDF-fake');
+  });
+
+  it('a print error from main fails the job with a readable message', async () => {
+    const { host, sent, job } = setupPrint((requestId) => ({
+      type: 'render-pdf-result',
+      requestId,
+      error: 'timed out',
+    }));
+    await host.handle({ type: 'convert', job });
+    expect(sent.at(-1)).toEqual({
+      type: 'failed',
+      jobId: 'p1',
+      message: 'Could not print to PDF: timed out',
+    });
+  });
+
+  it('cancel while waiting for main ends the job; a late reply is ignored', async () => {
+    let id = '';
+    const { host, sent, job } = setupPrint((requestId) => {
+      id = requestId;
+      return undefined;
+    });
+    const running = host.handle({ type: 'convert', job });
+    await new Promise((r) => setTimeout(r, 20));
+    await host.handle({ type: 'cancel', jobId: 'p1' });
+    await running;
+    expect(sent.at(-1)).toEqual({ type: 'cancelled', jobId: 'p1' });
+    await host.handle({ type: 'render-pdf-result', requestId: id, pdf: new Uint8Array(1) });
     expect(readdirSync(tmpRoot)).toEqual([]);
   });
 });

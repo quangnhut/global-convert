@@ -1,7 +1,12 @@
 import { utilityProcess, type UtilityProcess } from 'electron';
-import type { ConverterInfo, ConvertJob, ConvertResult } from '@shared/converter';
+import type { ConverterInfo, ConvertJob, ConvertResult, PdfPrintOptions } from '@shared/converter';
 import type { EngineToMain, MainToEngine } from '@shared/engine-protocol';
 import type { RunContext } from './queue/job-queue';
+
+/** Main-process services the engine can call while a job runs. */
+export interface EngineServices {
+  renderHtmlToPdf(htmlPath: string, options: PdfPrintOptions): Promise<Uint8Array>;
+}
 
 interface Pending {
   resolve(result: ConvertResult): void;
@@ -18,7 +23,10 @@ export class EngineClient {
   private ready: Promise<ConverterInfo[]> | undefined;
   private readonly pending = new Map<string, Pending>();
 
-  constructor(private readonly entryPath: string) {}
+  constructor(
+    private readonly entryPath: string,
+    private readonly services: EngineServices,
+  ) {}
 
   converters(): Promise<ConverterInfo[]> {
     return this.ensure();
@@ -61,6 +69,7 @@ export class EngineClient {
     this.ready = new Promise<ConverterInfo[]>((resolve, reject) => {
       proc.on('message', (msg: EngineToMain) => {
         if (msg.type === 'ready') resolve(msg.converters);
+        else if (msg.type === 'render-pdf') void this.onRenderPdf(msg);
         else this.onJobMessage(msg);
       });
       proc.once('exit', (code) => {
@@ -75,7 +84,17 @@ export class EngineClient {
     return this.ready;
   }
 
-  private onJobMessage(msg: Exclude<EngineToMain, { type: 'ready' }>): void {
+  private async onRenderPdf(msg: Extract<EngineToMain, { type: 'render-pdf' }>): Promise<void> {
+    try {
+      const pdf = await this.services.renderHtmlToPdf(msg.htmlPath, msg.options);
+      this.send({ type: 'render-pdf-result', requestId: msg.requestId, pdf });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      this.send({ type: 'render-pdf-result', requestId: msg.requestId, error });
+    }
+  }
+
+  private onJobMessage(msg: Exclude<EngineToMain, { type: 'ready' | 'render-pdf' }>): void {
     const pending = this.pending.get(msg.jobId);
     if (!pending) return;
     switch (msg.type) {

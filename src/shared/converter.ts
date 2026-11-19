@@ -48,6 +48,16 @@ export interface ConvertContext {
    * if taken. Every reserved path is reported as an output, and removed on failure/cancel.
    */
   reserveOutput(suffix?: string): Promise<string>;
+  /**
+   * Prints a self-contained HTML document to PDF with Chromium (runs in main, in a hidden
+   * window with scripts and network disabled; only `data:` resources load).
+   */
+  renderHtmlToPdf(html: string, options: PdfPrintOptions): Promise<Uint8Array>;
+}
+
+export interface PdfPrintOptions {
+  pageSize: 'A4' | 'Letter';
+  marginMm: number;
 }
 
 export interface Converter<O extends OptionValues = OptionValues> extends ConverterInfo {

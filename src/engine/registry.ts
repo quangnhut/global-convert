@@ -1,6 +1,11 @@
 import { pickConverter, targetsFor } from '@shared/capabilities';
 import type { Converter, ConverterInfo, OptionValues } from '@shared/converter';
 import { isFormatId, type FormatId } from '@shared/formats';
+import { createDocx } from './converters/document/docx';
+import { md } from './converters/document/md';
+import { pdf } from './converters/document/pdf';
+import { createPdfToDocx } from './converters/document/pdf-to-docx';
+import { txt } from './converters/document/txt';
 import { icoDecode } from './converters/image/ico-decode';
 import { icoEncode } from './converters/image/ico-encode';
 import { imagesToPdf } from './converters/image/images-to-pdf';
@@ -48,12 +53,22 @@ export class ConverterRegistry {
   }
 }
 
-/** The app's converters. Phase 3 registers document converters here. */
-export function createRegistry(): ConverterRegistry {
+export interface RegistryOptions {
+  /** LibreOffice `soffice` path; when set, LibreOffice engines are offered. */
+  soffice?: string;
+}
+
+/** The app's converters. */
+export function createRegistry({ soffice }: RegistryOptions = {}): ConverterRegistry {
   return new ConverterRegistry()
     .register(sharpRaster)
     .register(icoEncode)
     .register(icoDecode)
     .register(svgWrap)
-    .register(imagesToPdf);
+    .register(imagesToPdf)
+    .register(txt)
+    .register(md)
+    .register(createDocx(soffice))
+    .register(pdf)
+    .register(createPdfToDocx(soffice));
 }

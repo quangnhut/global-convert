@@ -3,8 +3,11 @@ import { app, BrowserWindow, shell } from 'electron';
 import icon from '../../resources/icon.png?asset';
 import { EngineClient } from './engine-client';
 import { registerIpc } from './ipc/register';
+import { renderHtmlFileToPdf } from './services/pdf-render';
 
-const engine = new EngineClient(join(__dirname, 'engine.js'));
+const engine = new EngineClient(join(__dirname, 'engine.js'), {
+  renderHtmlToPdf: renderHtmlFileToPdf,
+});
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({

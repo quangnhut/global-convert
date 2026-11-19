@@ -2,7 +2,7 @@
 
 | Field   | Value                                    |
 | ------- | ---------------------------------------- |
-| Status  | In progress — Phases 0–2 done, Phase 3 next |
+| Status  | In progress — Phases 0–3 done, Phase 4 next |
 | Created | 2026-11-19                               |
 | Product | **GlobalConvert**                        |
 | Targets | Windows, macOS, Linux                    |
@@ -43,7 +43,8 @@ adding a converter module and registering it.
 | ICO                | built-in writer (PNG entries), **decode-ico** (read, MIT) | sharp has no ICO support; writing PNG-entry ICOs is ~30 lines, no dep needed |
 | DOCX read          | **mammoth**                          | docx → html / raw text |
 | DOCX write         | **docx**                             | Generate .docx from text |
-| PDF read           | **pdfjs-dist**                       | Text extraction + page rendering |
+| PDF read           | **pdfjs-dist** + **@napi-rs/canvas** | Text extraction + page rendering (canvas = pdfjs's Node render target, prebuilt per OS) |
+| Markdown           | **marked**                           | md → html / tokens |
 | PDF write          | **pdf-lib** + Electron `webContents.printToPDF` | images→pdf, html→pdf without external deps |
 | Tests              | **Vitest**                           | |
 | Packaging          | **electron-builder** (NSIS / dmg / AppImage + deb) | One config for all three OSes |
@@ -110,7 +111,11 @@ export interface ConvertContext {
 - Outputs = every path the converter got from `reserveOutput` (multi-page → one call per
   page with a suffix like `-p1`). On failure/cancel the engine deletes them.
 - Options are validated against `optionsSchema` (`resolveOptions`) before `convert` runs.
-- `ctx.renderHtmlToPdf()` is **deferred to Phase 3**, where the first converter needs it.
+- `ctx.renderHtmlToPdf(html, { pageSize, marginMm })` (Phase 3): the engine writes the HTML
+  into the job's temp dir and sends `render-pdf`; main validates the path
+  (`<tmp>/globalconvert-*/*.html`), prints it in a hidden window (sandboxed, JavaScript off,
+  private in-memory session that blocks every request except that file and `data:` URLs)
+  and replies `render-pdf-result`. Generated HTML also carries a CSP that blocks scripts.
 
 - `ConverterRegistry.targetsFor(format)` → list of reachable formats (UI uses this).
 - `ConverterRegistry.pick(from, to)` → best converter (first registered wins; an
@@ -129,7 +134,9 @@ src/
     converters/
       image/       sharp-common.ts, sharp-raster.ts, ico-encode.ts, ico-decode.ts,
                    svg-wrap.ts, images-to-pdf.ts
-      document/    docx.ts, pdf.ts, txt.ts, md.ts
+      document/    txt.ts, md.ts, docx.ts, pdf.ts, pdf-to-docx.ts, pdf-layout.ts,
+                   pdfjs.ts, docx-writer.ts, html-doc.ts, text-decode.ts, zip.ts
+    libreoffice.ts (find + run soffice; optional)
   preload/         index.ts (contextBridge, typed API)
   renderer/        App.tsx, components/, hooks/, styles/
 tests/
@@ -240,6 +247,17 @@ Each phase ends in a working, testable state.
 - **verify:** tests per matrix cell; pdf→txt contains known fixture string;
   pdf→png produces N files for N pages; pdf→docx (Editable) contains the fixture's
   heading as a Heading style and its body text; pdf→docx (Exact) has N images for N pages.
+- **result:** ✅ Done 2026-11-20. 189 tests pass (47 new: every document matrix cell, encodings,
+  rich Markdown, zip-bomb guard, page ranges, Editable/Exact/scanned pdf→docx, layout units,
+  render protocol incl. cancel, path check; LibreOffice tests run when `soffice` is installed).
+  Checked end-to-end in real Electron (real `EngineClient` + hidden-window printing + built
+  engine): txt/md/docx→pdf, docx→pdf via LibreOffice, docx→html, pdf→png/txt, pdf→docx
+  (Editable + Exact), md→docx. Printed PDFs render UTF-8 (café, 日本語); generated .docx
+  files reopen in LibreOffice with the right page count (Exact: no spill-over pages).
+  Notes: LibreOffice engines appear in options only when `soffice` is found at engine
+  start (docx→pdf defaults to it then; pdf→docx offers it as a third mode). Images in
+  Markdown load only as `data:` URLs. Every docx input passes a ZIP-bomb check first.
+  pdfjs needs a workaround in the utilityProcess (see Risks).
 
 ### Phase 4 — UI
 1. DropZone (drag & drop + file picker + folder picker, recursive).
@@ -276,6 +294,7 @@ Each phase ends in a working, testable state.
 | Large PDFs (500+ pages) → memory | Render page-by-page, stream to disk, respect page range |
 | Malicious files (zip bombs in docx, huge SVG) | Size limits, pixel limit (`sharp({ limitInputPixels })`), timeouts per job, engine process isolation |
 | sharp under Electron on Linux prints many `GLib-GObject-CRITICAL` warnings (sharp warns `SharpElectronLinux`); output is still correct in testing | Phase 5: verify on clean Linux installs (AppImage + deb); follow sharp's "Electron and Linux" install notes if it misbehaves |
+| pdfjs treats Electron's utilityProcess as a browser (`process.type === 'utility'`) and skips its Node setup | `pdfjs.ts` hides `process.type` while pdfjs loads and runs the worker in-thread; re-check on pdfjs upgrades (e2e run in Electron caught it, Node tests can't) |
 | AGPL licences (e.g. mupdf, ghostscript) | Don't add AGPL deps without explicit decision |
 
 ---

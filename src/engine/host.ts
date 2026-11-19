@@ -1,4 +1,4 @@
-import { mkdtemp, rm, unlink } from 'node:fs/promises';
+import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConvertError, type ConvertJob } from '@shared/converter';
@@ -23,6 +23,9 @@ export function createEngineHost(
   { tmpRoot = tmpdir() }: EngineHostOptions = {},
 ) {
   const running = new Map<string, AbortController>();
+  /** In-flight `render-pdf` requests to main, by request id. */
+  const renders = new Map<string, { resolve(pdf: Uint8Array): void; reject(err: Error): void }>();
+  let renderCount = 0;
 
   async function run(job: ConvertJob): Promise<void> {
     if (running.has(job.id)) {
@@ -42,7 +45,8 @@ export function createEngineHost(
         );
       }
       const options = resolveOptions(converter.optionsSchema, converter.defaults, job.options);
-      tmpDir = await mkdtemp(join(tmpRoot, 'globalconvert-'));
+      const jobTmp = await mkdtemp(join(tmpRoot, 'globalconvert-'));
+      tmpDir = jobTmp;
       const base = baseNameOf(job.inputPath);
       const ext = FORMATS[job.to].extensions[0]!;
 
@@ -50,7 +54,7 @@ export function createEngineHost(
         { ...job, options },
         {
           signal: controller.signal,
-          tmpDir,
+          tmpDir: jobTmp,
           progress: (ratio) => {
             if (!controller.signal.aborted) {
               send({ type: 'progress', jobId: job.id, ratio: Math.min(1, Math.max(0, ratio)) });
@@ -60,6 +64,25 @@ export function createEngineHost(
             const path = await reserveOutputPath(job.outputDir, base, ext, suffix);
             outputs.push(path);
             return path;
+          },
+          renderHtmlToPdf: async (html, options) => {
+            const requestId = `${job.id}#${++renderCount}`;
+            const htmlPath = join(jobTmp, `render-${renderCount}.html`);
+            await writeFile(htmlPath, html);
+            controller.signal.throwIfAborted();
+            return new Promise<Uint8Array>((resolve, reject) => {
+              const onAbort = () => {
+                renders.delete(requestId);
+                reject(controller.signal.reason as Error);
+              };
+              controller.signal.addEventListener('abort', onAbort, { once: true });
+              const settle = () => controller.signal.removeEventListener('abort', onAbort);
+              renders.set(requestId, {
+                resolve: (pdf) => (settle(), resolve(pdf)),
+                reject: (err) => (settle(), reject(err)),
+              });
+              send({ type: 'render-pdf', requestId, htmlPath, options });
+            });
           },
         },
       );
@@ -95,6 +118,16 @@ export function createEngineHost(
         case 'cancel':
           running.get(msg.jobId)?.abort();
           return Promise.resolve();
+        case 'render-pdf-result': {
+          const pending = renders.get(msg.requestId);
+          renders.delete(msg.requestId);
+          if (msg.pdf) pending?.resolve(msg.pdf);
+          else
+            pending?.reject(
+              new ConvertError(`Could not print to PDF: ${msg.error ?? 'no output'}`),
+            );
+          return Promise.resolve();
+        }
       }
     },
   };
