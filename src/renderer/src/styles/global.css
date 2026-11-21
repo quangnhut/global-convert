@@ -1,7 +1,14 @@
 :root {
   --bg: #f7f7f8;
+  --surface: #ffffff;
   --fg: #1c1c1f;
   --muted: #6b6b75;
+  --border: #dedee3;
+  --accent: #2f7fd0;
+  --accent-fg: #ffffff;
+  --danger: #c43d3d;
+  --success: #2e8a4f;
+  --drop: rgba(47, 127, 208, 0.08);
   color-scheme: light dark;
   font-family:
     system-ui,
@@ -9,13 +16,20 @@
     'Segoe UI',
     Roboto,
     sans-serif;
+  font-size: 14px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #18181b;
+    --surface: #222226;
     --fg: #ececf1;
     --muted: #9a9aa5;
+    --border: #38383f;
+    --accent: #4f9be6;
+    --danger: #f07171;
+    --success: #5fc985;
+    --drop: rgba(79, 155, 230, 0.12);
   }
 }
 
@@ -29,19 +43,378 @@ body {
   color: var(--fg);
 }
 
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  color: var(--accent);
+}
+
+button.icon {
+  background: none;
+  border: none;
+  padding: 0 6px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+button.path {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+input[type='number'] {
+  width: 90px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.gap {
+  gap: 8px;
+}
+
+/* Layout */
+
 .app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+.header {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header h1 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.version {
+  margin-left: auto;
+  font-size: 12px;
 }
 
 .logo {
   object-fit: contain;
 }
 
-.muted {
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px 24px;
+}
+
+/* Drop zone */
+
+.dropzone {
+  flex: 1;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: center;
+  padding: 24px;
+}
+
+.dropzone-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.dropzone .muted {
+  max-width: 520px;
+  margin: 0 0 10px;
+}
+
+.dropbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+}
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--drop);
+  border: 3px dashed var(--accent);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.drop-overlay p {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--surface);
+  padding: 10px 20px;
+  border-radius: 8px;
+}
+
+/* Toolbar, options, actions */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 28px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fields .field.field-check {
+  flex-direction: row;
+  align-self: end;
+  padding-bottom: 6px;
+}
+
+.output {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.option-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.option-group summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.option-group .muted {
+  font-weight: normal;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px 20px;
+  padding: 10px 0 4px;
+}
+
+.fields .field > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  border-left: 3px solid var(--accent);
+  padding-left: 8px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.summary {
+  margin-left: auto;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.banner-error {
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  background: var(--surface);
+}
+
+/* File list */
+
+.files {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  table-layout: fixed;
+}
+
+.files th,
+.files td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.files th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.files th:nth-child(1) {
+  width: 32%;
+}
+.files th:nth-child(2) {
+  width: 12%;
+}
+.files th:nth-child(3) {
+  width: 9%;
+}
+.files th:nth-child(4) {
+  width: 17%;
+}
+.files th:nth-child(6) {
+  width: 40px;
+}
+
+.files tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.files .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.files .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files select {
+  width: 100%;
+  padding: 3px 6px;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status progress {
+  width: 110px;
+}
+
+.status-error {
+  color: var(--danger);
+}
+
+.status-done {
+  color: var(--success);
+}
+
+.row-error td {
   color: var(--muted);
 }

@@ -4,6 +4,7 @@ import type { FormatId } from '@shared/formats';
 import {
   backgroundField,
   encodeRaster,
+  errorText,
   openImage,
   qualityField,
   readMetadata,
@@ -88,7 +89,12 @@ export const sharpRaster: Converter<Options> = {
         });
       }
       if (!o.stripMetadata) result = result.keepMetadata();
-      await encodeRaster(result, to, o).toFile(out);
+      try {
+        await encodeRaster(result, to, o).toFile(out);
+      } catch (err) {
+        // The header was readable (metadata passed) but the pixel data is not.
+        throw new ConvertError(`The image is damaged or incomplete (${errorText(err)}).`);
+      }
     };
 
     if (pages > 1 && ANIMATED_FORMATS.includes(from) && ANIMATED_FORMATS.includes(to)) {

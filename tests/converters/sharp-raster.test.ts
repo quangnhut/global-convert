@@ -68,6 +68,17 @@ describe('image.sharp-raster', () => {
     expect([meta.width, meta.height]).toEqual([128, 96]);
   });
 
+  it('a truncated file (valid header, broken pixels) fails with a readable message', async () => {
+    const { readFile, writeFile } = await import('node:fs/promises');
+    const { fixturePath } = await import('./helpers');
+    const truncated = `${dir()}/truncated.png`;
+    await writeFile(truncated, (await readFile(fixturePath('png'))).subarray(0, 120));
+    const result = await convert(dir(), 'png', 'webp', {}, truncated);
+    expect(result.type === 'failed' && result.message).toMatch(
+      /^The image is damaged or incomplete/,
+    );
+  });
+
   it('a corrupt file fails with a readable message and leaves no output', async () => {
     const { writeFile, readdir } = await import('node:fs/promises');
     const bad = `${dir()}/broken.png`;

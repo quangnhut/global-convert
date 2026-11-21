@@ -4,6 +4,7 @@ import {
   IpcValidationError,
   validateConvertRequests,
   validateJobId,
+  validatePath,
   validatePaths,
 } from '../src/main/ipc/validate';
 
@@ -24,6 +25,16 @@ describe('IPC validation', () => {
   it('accepts a valid convert request', () => {
     expect(validateConvertRequests([good])).toEqual([good]);
     expect(validateConvertRequests([{ ...good, options: undefined }])[0]?.options).toEqual({});
+  });
+
+  it('outputDir may be null (= next to the input file)', () => {
+    expect(validateConvertRequests([{ ...good, outputDir: null }])[0]?.outputDir).toBeNull();
+  });
+
+  it('validatePath accepts one absolute path', () => {
+    expect(validatePath(abs)).toBe(abs);
+    expect(() => validatePath('rel.png')).toThrow(IpcValidationError);
+    expect(() => validatePath(undefined)).toThrow(IpcValidationError);
   });
 
   it.each([

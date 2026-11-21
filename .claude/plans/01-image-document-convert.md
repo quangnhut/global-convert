@@ -2,7 +2,7 @@
 
 | Field   | Value                                    |
 | ------- | ---------------------------------------- |
-| Status  | In progress — Phases 0–3 done, Phase 4 next |
+| Status  | In progress — Phases 0–4 done, Phase 5 next |
 | Created | 2026-11-19                               |
 | Product | **GlobalConvert**                        |
 | Targets | Windows, macOS, Linux                    |
@@ -23,10 +23,12 @@ adding a converter module and registering it.
 
 ### Success criteria
 
-- [ ] Drop 1..N files (mixed types) → app shows only valid target formats for each.
-- [ ] Batch convert with per-file progress, cancel, and clear error messages.
-- [ ] Every conversion in the matrix below (§4) has a passing automated test using a fixture.
-- [ ] UI never freezes during a 50-file batch (conversion runs off the main thread).
+- [x] Drop 1..N files (mixed types) → app shows only valid target formats for each.
+- [x] Batch convert with per-file progress, cancel, and clear error messages
+      (cancel of an in-flight job waits for its current operation — see §9).
+- [x] Every conversion in the matrix below (§4) has a passing automated test using a fixture.
+- [x] UI never freezes during a 50-file batch (conversion runs off the main thread).
+      Checked with 30 large (36 MP) images: the renderer kept responding throughout.
 - [ ] Installable builds that run on a clean machine: Windows (NSIS `.exe`),
       macOS (`.dmg`, x64 + arm64), Linux (`.AppImage` + `.deb`).
 
@@ -38,7 +40,7 @@ adding a converter module and registering it.
 | ------------------ | ------------------------------------ | --- |
 | Shell              | **Electron** + **electron-vite**     | Node ecosystem has the best conversion libs; one language end-to-end |
 | Language           | **TypeScript** (strict)              | |
-| UI                 | **React** + plain CSS modules        | Keep it simple; no UI framework until needed |
+| UI                 | **React** + one plain stylesheet     | Keep it simple; no UI framework until needed |
 | Raster images      | **sharp** (libvips)                  | Fast, covers png/jpg/webp/avif/gif/tiff, reads SVG |
 | ICO                | built-in writer (PNG entries), **decode-ico** (read, MIT) | sharp has no ICO support; writing PNG-entry ICOs is ~30 lines, no dep needed |
 | DOCX read          | **mammoth**                          | docx → html / raw text |
@@ -268,6 +270,16 @@ Each phase ends in a working, testable state.
    auto-suffix ` (1)`; never overwrite silently.
 6. Progress list, cancel all, "open output folder", error details.
 - **verify:** manual checklist in §7 passes; no renderer access to Node APIs.
+- **result:** ✅ Done 2026-11-20. 205 tests pass (new: batch state, folder scan, IPC
+  validation). Checked in the real app, driven over the Chrome DevTools Protocol with real
+  file drops (§7). Renderer has no `require`/`process`; `window.api` exposes named functions
+  only; main refuses relative paths and revealing files it didn't produce.
+  Design: pure batch logic in `renderer/src/state/batch.ts` (targets from the registry, never
+  hard-coded); options panel per converter in use, built from `optionsSchema`; folders are
+  expanded in main (recursive, skips hidden/unsupported/symlinks); output `null` = next to
+  each input (main resolves it); finished rows are not re-run unless their settings change
+  (failed/cancelled rows are retried). New IPC: pick files/folders/output dir, show output,
+  `pathForFile` (drag & drop via `webUtils`).
 
 ### Phase 5 — Packaging
 1. electron-builder config: Windows NSIS, macOS dmg (x64 + arm64), Linux AppImage + deb;
@@ -301,11 +313,15 @@ Each phase ends in a working, testable state.
 
 ## 7. Manual test checklist (Phase 4)
 
-- [ ] Drop 20 mixed files → only common targets shown; per-file override works.
-- [ ] Cancel mid-batch → remaining jobs stop, partial outputs cleaned up.
-- [ ] Output name conflict → `photo (1).webp`, original untouched.
-- [ ] Corrupt file → that row shows an error; batch continues.
-- [ ] Window resize / dark mode look fine.
+Run 2026-11-20 against the built app (real drops of files from disk, via CDP):
+
+- [x] Drop mixed files (6 mixed types, then 30 images) → only common targets shown
+      (none for png+docx+pdf, with a hint); per-file override works and widens the batch choice.
+- [x] Cancel mid-batch → queued jobs stop at once; partial outputs and temp dirs are cleaned
+      up. Jobs already inside one sharp operation stop only when it ends (~80 s for 36 MP → AVIF).
+- [x] Output name conflict → `sample (1).webp` / `sample (1).pdf`; originals untouched.
+- [x] Corrupt file → that row shows "The image is damaged or incomplete…"; batch continues.
+- [x] Window resize / dark mode look fine (dark, light, 760 px wide without horizontal scroll).
 
 ---
 
@@ -320,3 +336,7 @@ Each phase ends in a working, testable state.
 ## 9. Open questions
 
 1. Code signing certificates (Windows / Apple) — needed before public release (Phase 5).
+2. Instant cancel of running jobs: sharp/LibreOffice work can't be interrupted, so a cancelled
+   in-flight job finishes its current step first. Option: if a cancel isn't honoured within
+   ~2 s and every running job is cancelled, kill and restart the engine process (main must then
+   clean up the job's reserved outputs and temp dir itself). Decide before release.

@@ -60,12 +60,16 @@ export function validateConvertRequests(value: unknown): ConvertRequest[] {
     if (!isFormatId(r.to)) fail(`${field}.to is not a known format`);
     return {
       inputPath: absolutePath(r.inputPath, `${field}.inputPath`),
-      outputDir: absolutePath(r.outputDir, `${field}.outputDir`),
+      outputDir: r.outputDir === null ? null : absolutePath(r.outputDir, `${field}.outputDir`),
       from: r.from as ConvertRequest['from'],
       to: r.to as ConvertRequest['to'],
       options: optionValues(r.options, `${field}.options`),
     };
   });
+}
+
+export function validatePath(value: unknown): string {
+  return absolutePath(value, 'path');
 }
 
 export function validateJobId(value: unknown): string | undefined {
